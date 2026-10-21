@@ -6,6 +6,7 @@
 #include "doomkeys.h"
 #include "doomgeneric.h"
 #include "d_event.h"
+#include "doomtype.h"
 
 #include <stdio.h>
 #include <emscripten.h>
@@ -33,6 +34,13 @@ EMSCRIPTEN_KEEPALIVE void dg_mouse(int buttons, int dx, int dy)
   ev.data3 = -dy;
   ev.data4 = 0;
   D_PostEvent(&ev);
+}
+
+// Lets the page tell menus apart from gameplay (the mouse wheel moves the menu cursor).
+extern boolean menuactive;
+EMSCRIPTEN_KEEPALIVE int dg_menu_active(void)
+{
+  return menuactive ? 1 : 0;
 }
 
 EM_JS(void, js_init, (int w, int h), {

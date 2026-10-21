@@ -26,6 +26,10 @@
   .screen { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #000; border: 1px solid var(--line);
     border-radius: 10px; overflow: hidden; box-shadow: 0 0 24px rgba(255,60,200,.25); }
   canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; outline: none; }
+  .screen.steer canvas { cursor: crosshair; }
+  .deadzone { position: absolute; left: 50%; top: 50%; width: 22%; height: 22%; transform: translate(-50%, -50%); border-radius: 50%;
+    border: 1px dashed rgba(255, 60, 200, .35); pointer-events: none; display: none; }
+  .screen.steer .deadzone { display: block; }
   .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
     background: rgba(5, 2, 10, .72); cursor: pointer; text-align: center; padding: 16px; }
   .overlay b { font-size: 26px; letter-spacing: 4px; color: #fff; text-shadow: var(--title-shadow); }
@@ -38,8 +42,9 @@
   button.on { color: var(--accent); border-color: var(--accent); }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
   .panel .title { font-size: 11px; letter-spacing: 2px; color: var(--accent); text-transform: uppercase; margin-bottom: 8px; }
-  .keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 16px; font-size: 12px; color: var(--dim); }
-  .keys b { color: var(--text); display: inline-block; min-width: 92px; }
+  .panel p { font-size: 12px; color: var(--dim); line-height: 1.5; margin-bottom: 8px; }
+  .keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 4px 16px; font-size: 12px; color: var(--dim); }
+  .keys b { color: var(--text); display: inline-block; min-width: 100px; }
   footer { max-width: 960px; margin: 14px auto 0; font-size: 11px; color: var(--dim); text-align: center; line-height: 1.6; }
   footer a { color: var(--text); }
 </style>
@@ -50,30 +55,36 @@
   <div class="status" id="status">Loading…</div>
 </header>
 <main>
-  <div class="screen">
+  <div class="screen" id="screenBox">
     <canvas id="screen" width="320" height="200" tabindex="0"></canvas>
+    <div class="deadzone"></div>
     <div class="overlay" id="overlay"><b>CLICK TO PLAY</b><span id="overlayHint">Loading the WAD…</span></div>
   </div>
   <div class="bar">
-    <button id="mouseBtn" class="on" title="Click the screen to capture the mouse for turning">Mouse look: on</button>
+    <button id="mouseBtn" class="on">Mouse: steer</button>
+    <button id="menuBtn">Menu</button>
+    <button id="mapBtn">Map</button>
+    <button id="useBtn">Use</button>
     <button id="fullBtn">Fullscreen</button>
     <span class="status" id="hint"></span>
   </div>
+  <div class="status" id="keylog" style="text-align:left">Last key: (press any key)</div>
   <div class="panel">
     <div class="title">Controls</div>
+    <p id="modeHelp"></p>
     <div class="keys">
-      <div><b>W / ↑</b>Forward</div>
-      <div><b>S / ↓</b>Back</div>
-      <div><b>A / D</b>Strafe</div>
-      <div><b>← / →</b>Turn</div>
-      <div><b>Mouse</b>Turn (click screen)</div>
-      <div><b>Click / Ctrl</b>Fire</div>
-      <div><b>E / Space / R-click</b>Open doors, switches</div>
+      <div><b>W / I / ↑ / Num 8</b>Forward</div>
+      <div><b>S / K / ↓ / Num 2</b>Back</div>
+      <div><b>J / L / ← / →</b>Turn</div>
+      <div><b>A / D or U / O</b>Strafe</div>
+      <div><b>Left click / Ctrl</b>Fire</div>
+      <div><b>Right click / E / Space</b>Open doors, switches</div>
       <div><b>Shift</b>Run</div>
       <div><b>1 – 7</b>Weapons</div>
-      <div><b>Tab</b>Map</div>
-      <div><b>Esc</b>Menu / release mouse</div>
-      <div><b>Enter / Y / N</b>Menu choices</div>
+      <div><b>Tab / Map button</b>Automap</div>
+      <div><b>Esc / Menu button</b>Menu</div>
+      <div><b>In menus</b>Wheel moves, left click picks, right click goes back</div>
+      <div><b>Y / N</b>Answer prompts (or click)</div>
     </div>
   </div>
 </main>
@@ -90,40 +101,96 @@
   var K = { RIGHT: 0xae, LEFT: 0xac, UP: 0xad, DOWN: 0xaf, STRAFE_L: 0xa0, STRAFE_R: 0xa1, USE: 0xa2, FIRE: 0xa3,
     ESC: 27, ENTER: 13, TAB: 9, BACKSPACE: 0x7f, PAUSE: 0xff, EQUALS: 0x3d, MINUS: 0x2d, RSHIFT: 0x80 + 0x36, RALT: 0x80 + 0x38 };
   var CODE_MAP = {
-    KeyW: K.UP, ArrowUp: K.UP, KeyS: K.DOWN, ArrowDown: K.DOWN, ArrowLeft: K.LEFT, ArrowRight: K.RIGHT,
-    KeyA: K.STRAFE_L, KeyD: K.STRAFE_R, KeyE: K.USE, Space: K.USE, ControlLeft: K.FIRE, ControlRight: K.FIRE,
+    KeyW: K.UP, KeyI: K.UP, ArrowUp: K.UP, Numpad8: K.UP,
+    KeyS: K.DOWN, KeyK: K.DOWN, ArrowDown: K.DOWN, Numpad2: K.DOWN,
+    ArrowLeft: K.LEFT, KeyJ: K.LEFT, Numpad4: K.LEFT, ArrowRight: K.RIGHT, KeyL: K.RIGHT, Numpad6: K.RIGHT,
+    KeyA: K.STRAFE_L, KeyU: K.STRAFE_L, KeyD: K.STRAFE_R, KeyO: K.STRAFE_R,
+    KeyE: K.USE, Space: K.USE, ControlLeft: K.FIRE, ControlRight: K.FIRE,
     ShiftLeft: K.RSHIFT, ShiftRight: K.RSHIFT, AltLeft: K.RALT, AltRight: K.RALT, Escape: K.ESC, Enter: K.ENTER,
     NumpadEnter: K.ENTER, Tab: K.TAB, Backspace: K.BACKSPACE, Pause: K.PAUSE, Equal: K.EQUALS, Minus: K.MINUS,
     NumpadAdd: K.EQUALS, NumpadSubtract: K.MINUS
   };
   for (var f = 1; f <= 12; f++) CODE_MAP["F" + f] = f <= 10 ? 0x80 + 0x3a + f : 0x80 + 0x56 + (f - 10);
 
+  // Some embedded browsers leave e.code empty, so fall back to e.key names, then legacy keyCodes.
+  var KEY_NAMES = {
+    ArrowUp: "ArrowUp", Up: "ArrowUp", ArrowDown: "ArrowDown", Down: "ArrowDown", ArrowLeft: "ArrowLeft", Left: "ArrowLeft",
+    ArrowRight: "ArrowRight", Right: "ArrowRight", Control: "ControlLeft", Shift: "ShiftLeft", Alt: "AltLeft",
+    Escape: "Escape", Esc: "Escape", Enter: "Enter", Tab: "Tab", Backspace: "Backspace", Pause: "Pause", " ": "Space",
+    Spacebar: "Space", w: "KeyW", a: "KeyA", s: "KeyS", d: "KeyD", e: "KeyE", i: "KeyI", j: "KeyJ", k: "KeyK", l: "KeyL",
+    u: "KeyU", o: "KeyO", "=": "Equal", "+": "Equal", "-": "Minus"
+  };
+  var KEY_CODES = {
+    38: "ArrowUp", 40: "ArrowDown", 37: "ArrowLeft", 39: "ArrowRight", 17: "ControlLeft", 16: "ShiftLeft", 18: "AltLeft",
+    27: "Escape", 13: "Enter", 9: "Tab", 8: "Backspace", 19: "Pause", 32: "Space", 87: "KeyW", 65: "KeyA", 83: "KeyS",
+    68: "KeyD", 69: "KeyE", 73: "KeyI", 74: "KeyJ", 75: "KeyK", 76: "KeyL", 85: "KeyU", 79: "KeyO",
+    104: "Numpad8", 98: "Numpad2", 100: "Numpad4", 102: "Numpad6", 187: "Equal", 61: "Equal", 189: "Minus", 173: "Minus"
+  };
+  for (var fk = 1; fk <= 12; fk++) KEY_CODES[111 + fk] = "F" + fk;
+
+  var MODES = ["steer", "capture", "off"];
+  var MODE_LABEL = { steer: "Mouse: steer", capture: "Mouse: capture", off: "Mouse: off" };
+  var MODE_HELP = {
+    steer: "Steer mode: with the cursor over the screen, push it left or right of the centre circle to turn, and above or below to walk forward or back. The further out, the faster. Click to fire.",
+    capture: "Capture mode: click the screen to lock the mouse, then move it to turn. Esc releases it. (Some in-game browsers block this; use steer mode instead.)",
+    off: "Mouse movement off: keyboard only. Clicks still fire and pick menu items."
+  };
+
   var canvas = document.getElementById("screen");
+  var box = document.getElementById("screenBox");
   var overlay = document.getElementById("overlay");
   var overlayHint = document.getElementById("overlayHint");
   var statusEl = document.getElementById("status");
   var hintEl = document.getElementById("hint");
   var mouseBtn = document.getElementById("mouseBtn");
+  var modeHelp = document.getElementById("modeHelp");
+  var keyLog = document.getElementById("keylog");
   var ctx = canvas.getContext("2d");
   var img = null;
   var ready = false;
-  var mouseLook = true;
+  var mode = "steer";
   var held = {};        // doom key -> true while held, so blur can release them
   var buttons = 0;      // mouse button bitmask sent with motion
+  var cursor = null;    // steer mode: cursor position as -1..1 from the screen centre, or null when off the screen
+
+  function codeFor(e) {
+    if (e.code && CODE_MAP[e.code] !== undefined) return e.code;
+    var k = e.key && e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (k && KEY_NAMES[k]) return KEY_NAMES[k];
+    if (k && /^F\d{1,2}$/.test(k)) return k;
+    var kc = e.keyCode || e.which;
+    if (kc && KEY_CODES[kc]) return KEY_CODES[kc];
+    return "";
+  }
 
   function doomKeyFor(e) {
-    if (CODE_MAP[e.code] !== undefined) return CODE_MAP[e.code];
+    var code = codeFor(e);
+    if (code) return CODE_MAP[code];
     if (e.key && e.key.length === 1) {
       var c = e.key.toLowerCase().charCodeAt(0);
       if (c >= 32 && c < 127) return c;
     }
+    var kc = e.keyCode || e.which;
+    if (kc >= 48 && kc <= 57) return kc;             // digits
+    if (kc >= 65 && kc <= 90) return kc + 32;        // letters, lowercase
     return 0;
+  }
+
+  // Key readout: shows what the browser actually reports, to diagnose in-game key problems.
+  function logKey(type, e, mapped) {
+    keyLog.textContent = "Last key: " + type + " key=" + JSON.stringify(e.key) + " code=" + JSON.stringify(e.code) +
+      " keyCode=" + (e.keyCode || e.which || 0) + " → doom " + (mapped || "none");
   }
 
   function send(pressed, key) {
     if (!ready || !key) return;
     if (pressed) held[key] = true; else delete held[key];
     Module._dg_key(pressed ? 1 : 0, key);
+  }
+
+  function tap(key) {
+    send(true, key);
+    setTimeout(function () { send(false, key); }, 90);
   }
 
   function releaseAll() {
@@ -133,70 +200,122 @@
   }
 
   function playing() { return ready && overlay.classList.contains("hidden"); }
+  function inMenu() { return ready && Module._dg_menu_active() === 1; }
+  function locked() { return document.pointerLockElement === canvas; }
 
-  window.addEventListener("keydown", function (e) {
-    if (!playing()) return;
+  document.addEventListener("keydown", function (e) {
     var k = doomKeyFor(e);
-    if (!k) return;
+    logKey("down", e, k);
+    if (!playing() || !k) return;
     e.preventDefault();
-    if (!e.repeat) send(true, k);
-  });
-  window.addEventListener("keyup", function (e) {
-    if (!playing()) return;
+    if (!held[k]) send(true, k);   // ignore auto-repeat, which some browsers don't flag
+  }, true);
+  document.addEventListener("keyup", function (e) {
     var k = doomKeyFor(e);
-    if (!k) return;
+    logKey("up", e, k);
+    if (!playing() || !k) return;
     e.preventDefault();
     send(false, k);
-  });
+  }, true);
+  document.addEventListener("keypress", function (e) { logKey("press", e, doomKeyFor(e)); }, true);
   window.addEventListener("blur", function () { if (ready) releaseAll(); });
 
-  function locked() { return document.pointerLockElement === canvas; }
+  function lockMouse() {
+    if (mode !== "capture" || !canvas.requestPointerLock) return;
+    try { var p = canvas.requestPointerLock(); if (p && p.catch) p.catch(onLockFailed); } catch (err) { onLockFailed(); }
+  }
+  function onLockFailed() {
+    if (mode !== "capture") return;
+    setMode("steer");
+    hintEl.textContent = "This browser blocks mouse capture, so switched to steer mode.";
+  }
+  document.addEventListener("pointerlockerror", onLockFailed);
 
   function start() {
     if (!ready) return;
     overlay.classList.add("hidden");
     canvas.focus();
-    if (mouseLook && canvas.requestPointerLock) {
-      try { var p = canvas.requestPointerLock(); if (p && p.catch) p.catch(function () {}); } catch (err) {}
-    }
-    // SDL/WebAudio (if built with sound) needs a user gesture to start.
-    try { if (window.AudioContext && Module.SDL2 && Module.SDL2.audioContext) Module.SDL2.audioContext.resume(); } catch (err) {}
+    lockMouse();
+    // SDL's WebAudio context needs a user gesture to start.
+    try { if (Module.SDL2 && Module.SDL2.audioContext) Module.SDL2.audioContext.resume(); } catch (err) {}
   }
   overlay.addEventListener("click", start);
-  canvas.addEventListener("click", function () { if (playing() && mouseLook && !locked()) start(); });
 
   canvas.addEventListener("mousedown", function (e) {
     if (!playing()) return;
     e.preventDefault();
+    canvas.focus();
+    if (inMenu()) {
+      // Menus by mouse: left click picks (Enter, or Y on yes/no prompts), right click goes back.
+      if (e.button === 0) { tap(K.ENTER); tap(121); }
+      if (e.button === 2) tap(K.ESC);
+      return;
+    }
+    if (mode === "capture" && !locked() && e.button === 0) { lockMouse(); return; }
     if (e.button === 0) { buttons |= 1; Module._dg_mouse(buttons, 0, 0); }
     if (e.button === 2) send(true, K.USE);
   });
   window.addEventListener("mouseup", function (e) {
     if (!ready) return;
     if (e.button === 0 && buttons & 1) { buttons &= ~1; Module._dg_mouse(buttons, 0, 0); }
-    if (e.button === 2) send(false, K.USE);
+    if (e.button === 2 && held[K.USE]) send(false, K.USE);
   });
   canvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-  document.addEventListener("mousemove", function (e) {
-    if (!playing() || !locked()) return;
-    var dx = e.movementX || 0;
-    if (dx) Module._dg_mouse(buttons, dx * 2, 0);
-  });
-  document.addEventListener("pointerlockchange", function () {
-    hintEl.textContent = locked() ? "Mouse captured. Esc releases it." : (playing() && mouseLook ? "Click the screen to capture the mouse." : "");
-  });
 
-  mouseBtn.addEventListener("click", function () {
-    mouseLook = !mouseLook;
-    mouseBtn.textContent = "Mouse look: " + (mouseLook ? "on" : "off");
-    mouseBtn.classList.toggle("on", mouseLook);
-    if (!mouseLook && locked()) document.exitPointerLock();
+  canvas.addEventListener("wheel", function (e) {
+    if (!playing()) return;
+    e.preventDefault();
+    if (inMenu()) tap(e.deltaY > 0 ? K.DOWN : K.UP);
+  }, { passive: false });
+
+  document.addEventListener("mousemove", function (e) {
+    if (playing() && mode === "capture" && locked()) {
+      var dx = e.movementX || 0;
+      if (dx) Module._dg_mouse(buttons, dx * 2, 0);
+    }
   });
+  canvas.addEventListener("mousemove", function (e) {
+    var r = canvas.getBoundingClientRect();
+    cursor = { x: ((e.clientX - r.left) / r.width) * 2 - 1, y: ((e.clientY - r.top) / r.height) * 2 - 1 };
+  });
+  canvas.addEventListener("mouseleave", function () { cursor = null; });
+
+  // Steer mode: every frame, turn and walk in proportion to how far the cursor sits outside the dead zone.
+  // Vanilla DOOM rounds each tic's turn to steps of 128 angle units (mouse x * 8), so turning starts at 16.
+  var DEAD = 0.11, MIN_TURN = 16, MAX_TURN = 120, MIN_WALK = 6, MAX_WALK = 50;
+  function axis(v, min, max) {
+    var a = Math.abs(v);
+    if (a <= DEAD) return 0;
+    var t = Math.min(1, (a - DEAD) / (1 - DEAD - 0.05));
+    return (v < 0 ? -1 : 1) * Math.round(min + (max - min) * t * t);
+  }
+  (function steerLoop() {
+    if (playing() && mode === "steer" && cursor && !inMenu()) {
+      var dx = axis(cursor.x, MIN_TURN, MAX_TURN);
+      var dy = axis(cursor.y, MIN_WALK, MAX_WALK);
+      if (dx || dy) Module._dg_mouse(buttons, dx, dy);
+    }
+    requestAnimationFrame(steerLoop);
+  })();
+
+  function setMode(m) {
+    mode = m;
+    mouseBtn.textContent = MODE_LABEL[m];
+    mouseBtn.classList.toggle("on", m !== "off");
+    box.classList.toggle("steer", m === "steer");
+    modeHelp.textContent = MODE_HELP[m];
+    if (m !== "capture" && locked()) document.exitPointerLock();
+    hintEl.textContent = "";
+  }
+  mouseBtn.addEventListener("click", function () { setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]); });
+  document.getElementById("menuBtn").addEventListener("click", function () { if (playing()) tap(K.ESC); else start(); });
+  document.getElementById("mapBtn").addEventListener("click", function () { if (playing()) tap(K.TAB); });
+  document.getElementById("useBtn").addEventListener("click", function () { if (playing()) tap(K.USE); });
   document.getElementById("fullBtn").addEventListener("click", function () {
-    var el = canvas.parentElement;
-    var req = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (req) req.call(el);
+    var req = box.requestFullscreen || box.webkitRequestFullscreen;
+    if (req) req.call(box);
   });
+  setMode("steer");
 
   window.Module = {
     arguments: ["-iwad", "doom1.wad"],
@@ -214,7 +333,7 @@
     onRuntimeInitialized: function () {
       ready = true;
       statusEl.textContent = "Episode 1: Knee-Deep in the Dead";
-      overlayHint.textContent = "Keyboard + mouse. Esc opens the menu.";
+      overlayHint.textContent = "Then: Menu button or Esc, click New Game.";
     },
     onAbort: function (what) { statusEl.textContent = "Crashed: " + what; },
     quit: function () { statusEl.textContent = "Quit. Reload the page to play again."; overlay.classList.remove("hidden"); ready = false; }

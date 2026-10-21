@@ -31,7 +31,7 @@ cd "$ROOT/wad"
 "$EMCC" -O2 $LINK $OBJS -o "$OUT/doom.js" \
   --preload-file doom1.wad \
   -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=64MB \
-  -sEXPORTED_FUNCTIONS=_main,_dg_key,_dg_mouse \
+  -sEXPORTED_FUNCTIONS=_main,_dg_key,_dg_mouse,_dg_menu_active \
   -sEXPORTED_RUNTIME_METHODS=callMain \
   -sENVIRONMENT=web -lm
 ls -l "$OUT"
